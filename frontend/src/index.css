@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-[#2d2d2d] min-h-screen;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Poppins", system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-[#5b7fd4] hover:bg-[#4a6ec3] text-white font-normal py-3 px-6 rounded-full 
+           transition-all duration-200 hover:shadow-sm
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus:outline-none focus:ring-2 focus:ring-[#5b7fd4] focus:ring-opacity-30;
+  }
+
+  .btn-secondary {
+    @apply bg-[#7aa5d1] hover:bg-[#6994c0] text-white font-normal py-3 px-6 rounded-full 
+           transition-all duration-200 hover:shadow-sm
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus:outline-none focus:ring-2 focus:ring-[#7aa5d1] focus:ring-opacity-30;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 border border-[#e0e0e0] rounded-full 
+           focus:outline-none focus:border-[#5b7fd4] focus:ring-1 focus:ring-[#5b7fd4] focus:ring-opacity-20
+           transition-all duration-200 bg-white text-[#2d2d2d] placeholder-[#5a5a5a] font-light text-base;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl shadow-sm p-6 transition-all duration-200 
+           border border-[#e0e0e0];
+  }
+
+  .badge {
+    @apply px-3 py-1 rounded-full text-xs font-normal;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-slow {
+    animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse-slow {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.85;
+    }
+  }
+}
