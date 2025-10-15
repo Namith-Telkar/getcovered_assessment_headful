@@ -374,7 +374,7 @@ If detected, the application will inform you that the site cannot be scraped pro
 
 ```json
 {
-  "url": "https://medium.com/m/signin",
+  "url": "https://myaccount.nytimes.com/auth/login",
   "found": false,
   "components": [],
   "captcha_detected": true,

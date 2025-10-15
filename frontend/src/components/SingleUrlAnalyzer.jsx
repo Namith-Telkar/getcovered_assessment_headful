@@ -9,8 +9,8 @@ function SingleUrlAnalyzer({ onAnalysisComplete, onError, setIsLoading }) {
     { name: "GitHub", url: "https://github.com/login" },
     { name: "Instagram", url: "https://instagram.com/accounts/login" },
     { name: "Stack Overflow", url: "https://stackoverflow.com/users/login" },
-    { name: "Medium", url: "https://medium.com/m/signin" },
-    { name: "WordPress", url: "https://wordpress.com/log-in" },
+    { name: "Etsy", url: "https://www.etsy.com/signin" },
+    { name: "CNN", url: "https://www.cnn.com/account/log-in" },
   ];
 
   const handleSubmit = async (e) => {
