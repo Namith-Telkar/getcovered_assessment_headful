@@ -5,6 +5,7 @@ from typing import Optional
 from scraper import AuthDetector
 from agent import AgenticAuthDetector
 import logging
+import uvicorn
 
 app = FastAPI(title="Auth Component Detector API")
 
@@ -20,7 +21,7 @@ detector = AuthDetector()
 
 class URLRequest(BaseModel):
     url: str
-    use_agents: bool = False
+    use_agents: bool = True
 
 class AuthResponse(BaseModel):
     url: str
@@ -85,5 +86,4 @@ async def analyze_url(request: URLRequest):
         }
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

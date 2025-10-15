@@ -27,98 +27,43 @@ class AuthDetector:
             'Cache-Control': 'max-age=0'
         })
     
-    def detect_auth_components(self, url, max_depth=2, use_chromedriver=True):
+    def detect_auth_components(self, url, use_chromedriver=True):
         """
         Detect auth components using undetected-chromedriver
         
         Args:
             url: URL to analyze
-            max_depth: Maximum recursion depth for link following
             use_chromedriver: If True (default), use undetected-chromedriver to open in browser
         """
         if use_chromedriver:
             print(f"🚗 Using undetected-chromedriver to open page in browser...")
             return self._detect_with_chromedriver(url)
         
-        return self._detect_recursive(url, depth=0, max_depth=max_depth, visited=set())
-    
-    def _detect_recursive(self, url, depth, max_depth, visited):
-        print(f"\n🔍 DEPTH {depth}: Analyzing {url}")
-        
-        if url in visited:
-            print(f"⏭️  Already visited, skipping")
-            return {
-                "url": url,
-                "found": False,
-                "components": [],
-                "ai_analysis": "URL already visited"
-            }
-        
-        visited.add(url)
-        
+        # Fallback: simple scraping without ChromeDriver
         try:
-            # Step 1: Scrape current page
-            print(f"📄 Scraping page...")
-            html_content = self._scrape_page(url)
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            html_content = response.text
             soup = BeautifulSoup(html_content, 'html.parser')
             
-            # Step 2: Traditional detection (ALWAYS do this)
-            print(f"🔎 Traditional detection...")
-            traditional_results = self._traditional_detection(soup)
-            print(f"📊 Found {len(traditional_results)} traditional components")
+            components = self._traditional_detection(soup)
             
-            # Step 3: If found, return results
-            if traditional_results:
-                print(f"✅ Auth components found! Getting AI analysis...")
+            if components:
                 ai_analysis = self._ai_analyze_found(html_content, soup)
-                print(f"🤖 AI Analysis: {ai_analysis[:100]}...")
                 return {
                     "url": url,
                     "found": True,
-                    "components": traditional_results,
+                    "components": components,
                     "ai_analysis": ai_analysis
                 }
-            
-            # Step 4: If at max depth, do final AI analysis but don't recurse
-            if depth >= max_depth:
-                print(f"🛑 Max depth reached, doing final AI analysis...")
+            else:
                 ai_analysis = self._ai_analyze_not_found(soup, [])
-                print(f"🤖 Final AI Analysis: {ai_analysis[:100]}...")
                 return {
                     "url": url,
                     "found": False,
                     "components": [],
                     "ai_analysis": ai_analysis
                 }
-            
-            # Step 5: If not found and not at max depth, ask AI for potential login links
-            print(f"🤖 Asking AI for potential login links...")
-            potential_links = self._ai_suggest_login_links(soup, url)
-            print(f"🔗 AI suggested {len(potential_links)} links: {potential_links}")
-            
-            # Step 6: Try each suggested link recursively
-            for i, link_url in enumerate(potential_links[:2]):  # Limit to 2 links per level
-                if link_url not in visited:
-                    print(f"🚀 Following suggested link {i+1}: {link_url}")
-                    result = self._detect_recursive(link_url, depth + 1, max_depth, visited)
-                    if result["found"]:
-                        # Update analysis to show the path taken
-                        result["ai_analysis"] = f"Found via link from {url}: {result['ai_analysis']}"
-                        return result
-                else:
-                    print(f"⏭️  Skipping already visited: {link_url}")
-            
-            # Step 7: No auth found at this level
-            print(f"❌ No auth found. Getting final AI analysis...")
-            ai_analysis = self._ai_analyze_not_found(soup, potential_links)
-            print(f"🤖 Final AI Analysis: {ai_analysis[:100]}...")
-            return {
-                "url": url,
-                "found": False,
-                "components": [],
-                "ai_analysis": ai_analysis
-            }
-            
         except Exception as e:
             return {
                 "url": url,
@@ -147,23 +92,39 @@ class AuthDetector:
             driver = uc.Chrome(options=options, version_main=None)
             
             print(f"📄 Navigating to {url}...")
-            driver.get(url)
+            try:
+                driver.get(url)
+            except Exception as nav_err:
+                print(f"❌ Navigation failed: {nav_err}")
+                raise Exception(f"Failed to navigate to URL: {str(nav_err)}")
             
             # Wait for page to load
             print(f"⏳ Waiting for page to load...")
             time.sleep(5)  # Wait 5 seconds for dynamic content to load
             
-            # Optional: Wait for specific elements
+            # Check if browser window is still open
             try:
-                WebDriverWait(driver, 10).until(
+                current_url = driver.current_url
+                print(f"✅ Browser still active, current URL: {current_url}")
+            except Exception as check_err:
+                print(f"⚠️  Browser window closed unexpectedly (likely anti-bot protection): {check_err}")
+                raise Exception("Browser window was closed by the website (anti-bot protection detected)")
+            
+            # Get the page source immediately (before any waits that might fail)
+            try:
+                html_content = driver.page_source
+                print(f"✅ Got rendered HTML ({len(html_content)} chars)")
+            except Exception as html_err:
+                print(f"❌ Failed to get page source: {html_err}")
+                raise Exception(f"Could not extract HTML: {str(html_err)}")
+            
+            # Optional: Wait for specific elements (but don't fail if it errors)
+            try:
+                WebDriverWait(driver, 3).until(
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
             except Exception as wait_err:
-                print(f"⚠️  Wait warning: {wait_err}")
-            
-            # Get the page source (rendered HTML)
-            html_content = driver.page_source
-            print(f"✅ Got rendered HTML ({len(html_content)} chars)")
+                print(f"⚠️  Wait warning (continuing anyway): {wait_err}")
             
             # Take screenshot for debugging (optional)
             # driver.save_screenshot('debug_screenshot.png')
@@ -227,8 +188,13 @@ class AuthDetector:
             
             components = self._traditional_detection(soup)
             
-            # Close the browser
-            driver.quit()
+            # Close the browser safely
+            try:
+                if driver:
+                    driver.quit()
+                    print(f"✅ Browser closed successfully")
+            except Exception as close_err:
+                print(f"⚠️  Browser close warning (browser may have already closed): {close_err}")
             
             if components:
                 print(f"✅ Found {len(components)} auth components")
@@ -260,8 +226,14 @@ class AuthDetector:
                 
         except Exception as e:
             print(f"❌ ChromeDriver error: {e}")
-            if driver:
-                driver.quit()
+            # Try to close the browser if it's still open
+            try:
+                if driver:
+                    driver.quit()
+                    print(f"✅ Browser closed after error")
+            except Exception as close_err:
+                print(f"⚠️  Could not close browser (may already be closed): {close_err}")
+            
             return {
                 "url": url,
                 "found": False,
@@ -269,124 +241,6 @@ class AuthDetector:
                 "ai_analysis": f"ChromeDriver error: {str(e)}"
             }
     
-    def _is_js_heavy_page(self, url):
-        """
-        Dynamically detect if a page is JavaScript-heavy by analyzing initial HTML.
-        Returns True if the page likely needs JavaScript rendering.
-        """
-        try:
-            print(f"🔍 Analyzing page to detect if JS-heavy...")
-            
-            # Quick check for known problematic domains that always need ChromeDriver
-            # (Fallback for sites that may have detection issues)
-            domain = urlparse(url).netloc.lower()
-            known_js_heavy = ['instagram.com', 'twitter.com', 'x.com', 'wordpress.com']
-            if any(known in domain for known in known_js_heavy):
-                print(f"   ⚡ Known JS-heavy domain detected: {domain}")
-                print(f"✅ Page is JS-heavy (known domain), will use ChromeDriver")
-                return True
-            
-            response = self.session.get(url, timeout=10)
-            html = response.text
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            print(f"   📄 HTML size: {len(html)} bytes")
-            
-            # Indicators that suggest JS-heavy page
-            indicators = {
-                'minimal_content': 0,
-                'many_scripts': 0,
-                'react_vue_angular': 0,
-                'spa_frameworks': 0,
-                'no_forms': 0,
-                'placeholder_divs': 0
-            }
-            
-            # 1. Check for minimal HTML content (< 5KB with mostly scripts)
-            if len(html) < 5000:
-                script_tags = soup.find_all('script')
-                if len(script_tags) > 3:
-                    indicators['minimal_content'] = 1
-                    print(f"   ✓ Minimal HTML with {len(script_tags)} scripts")
-            
-            # 2. Check for excessive JavaScript (many script tags or large bundles)
-            script_tags = soup.find_all('script')
-            if len(script_tags) > 10:
-                indicators['many_scripts'] = 1
-                print(f"   ✓ Many script tags ({len(script_tags)})")
-            
-            # 3. Check for React/Vue/Angular indicators
-            html_lower = html.lower()
-            react_indicators = ['react', 'reactdom', '__react', 'data-reactroot', 'data-reactid']
-            vue_indicators = ['vue', 'v-app', 'v-if', 'data-v-']
-            angular_indicators = ['angular', 'ng-app', 'ng-controller', 'ng-']
-            
-            framework_count = 0
-            if any(indicator in html_lower for indicator in react_indicators):
-                framework_count += 1
-                print(f"   ✓ React framework detected")
-            if any(indicator in html_lower for indicator in vue_indicators):
-                framework_count += 1
-                print(f"   ✓ Vue framework detected")
-            if any(indicator in html_lower for indicator in angular_indicators):
-                framework_count += 1
-                print(f"   ✓ Angular framework detected")
-            
-            if framework_count > 0:
-                indicators['react_vue_angular'] = 1
-            
-            # 4. Check for SPA framework patterns
-            spa_patterns = ['webpack', 'chunk', 'bundle.js', 'app.js', 'main.js', 'vendor.js']
-            script_srcs = [script.get('src', '').lower() for script in script_tags]
-            if any(pattern in ' '.join(script_srcs) for pattern in spa_patterns):
-                indicators['spa_frameworks'] = 1
-                print(f"   ✓ SPA bundle patterns detected")
-            
-            # 5. Check for lack of traditional forms but presence of login-related content
-            forms = soup.find_all('form')
-            traditional_inputs = soup.find_all('input', {'type': ['text', 'email', 'password']})
-            body_text = soup.get_text().lower() if soup.body else ''
-            
-            has_login_keywords = any(keyword in body_text for keyword in ['login', 'sign in', 'password', 'username'])
-            
-            if len(forms) == 0 and len(traditional_inputs) == 0 and has_login_keywords:
-                indicators['no_forms'] = 1
-                print(f"   ✓ Login keywords present but no traditional forms")
-            
-            # 6. Check for placeholder divs (root, app, etc.) with minimal children
-            root_divs = soup.find_all('div', {'id': re.compile(r'root|app|main|__next', re.I)})
-            for root_div in root_divs:
-                # If root div exists but has very few direct HTML elements
-                children = root_div.find_all(recursive=False)
-                if len(children) < 5:
-                    indicators['placeholder_divs'] = 1
-                    print(f"   ✓ Root div with minimal content (SPA mount point)")
-                    break
-            
-            # Calculate score (out of 6 possible indicators)
-            score = sum(indicators.values())
-            threshold = 2  # If 2 or more indicators, likely JS-heavy
-            
-            print(f"📊 JS-heavy score: {score}/6 (threshold: {threshold})")
-            
-            is_js_heavy = score >= threshold
-            
-            if is_js_heavy:
-                print(f"✅ Page is JS-heavy, will use ChromeDriver")
-            else:
-                print(f"✅ Page is traditional HTML, will use fast scraping")
-            
-            return is_js_heavy
-            
-        except Exception as e:
-            print(f"⚠️  Error detecting JS-heavy page, defaulting to traditional: {e}")
-            return False
-    
-    
-    def _scrape_page(self, url):
-        response = self.session.get(url, timeout=10)
-        response.raise_for_status()
-        return response.text
     
     def _traditional_detection(self, soup):
         components = []
@@ -532,115 +386,6 @@ class AuthDetector:
         
         print(f"🔍 Detection found: {len(components)} components")
         return components
-    
-    def _ai_suggest_login_links(self, soup, base_url):
-        """Ask AI to analyze complete page content for any auth-related elements"""
-        try:
-            # Get FULL page content including CSS and JS
-            full_html = str(soup)
-            
-            # Extract all clickable elements with their full context
-            all_elements = []
-            
-            # Get ALL links
-            for link in soup.find_all('a', href=True):
-                text = link.get_text().strip()
-                href = link.get('href')
-                classes = ' '.join(link.get('class', []))
-                onclick = link.get('onclick', '')
-                all_elements.append(f"<a href='{href}' class='{classes}' onclick='{onclick}'>{text}</a>")
-            
-            # Get ALL buttons and inputs
-            for elem in soup.find_all(['button', 'input', 'div'], {'type': True}):
-                text = elem.get_text().strip()
-                elem_type = elem.get('type', '')
-                classes = ' '.join(elem.get('class', []))
-                onclick = elem.get('onclick', '')
-                data_attrs = {k: v for k, v in elem.attrs.items() if k.startswith('data-')}
-                all_elements.append(f"<{elem.name} type='{elem_type}' class='{classes}' onclick='{onclick}' data='{data_attrs}'>{text}</{elem.name}>")
-            
-            # Get divs that might be clickable (React components, etc.)
-            for div in soup.find_all('div', {'class': True}):
-                classes = ' '.join(div.get('class', []))
-                if any(keyword in classes.lower() for keyword in ['login', 'signin', 'auth', 'button', 'click']):
-                    text = div.get_text().strip()[:50]
-                    onclick = div.get('onclick', '')
-                    data_attrs = {k: v for k, v in div.attrs.items() if k.startswith('data-')}
-                    all_elements.append(f"<div class='{classes}' onclick='{onclick}' data='{data_attrs}'>{text}</div>")
-            
-            print(f"📝 Sending FULL page content to AI ({len(full_html)} chars)")
-            print(f"📝 Found {len(all_elements)} potentially clickable elements")
-            
-            # If no elements found, try common auth URLs as fallback
-            if len(all_elements) == 0:
-                print("⚠️  No clickable elements found, trying common auth URLs...")
-                domain = urlparse(base_url).netloc.lower()
-                common_auth_paths = []
-                
-                if 'amazon' in domain:
-                    common_auth_paths = ['/ap/signin', '/gp/signin', '/signin']
-                elif 'twitter' in domain or 'x.com' in domain:
-                    common_auth_paths = ['/login', '/i/flow/login']
-                elif 'facebook' in domain:
-                    common_auth_paths = ['/login', '/login.php']
-                elif 'google' in domain:
-                    common_auth_paths = ['/accounts/signin', '/signin']
-                else:
-                    common_auth_paths = ['/login', '/signin', '/auth', '/account/login']
-                
-                fallback_urls = [urljoin(base_url, path) for path in common_auth_paths]
-                print(f"🔧 Trying fallback URLs: {fallback_urls}")
-                return fallback_urls[:3]
-            
-            response = ollama.chat(model='llama3.2:latest', messages=[{
-                'role': 'user',
-                'content': f'''Find authentication/login URLs from these page elements:
-
-{chr(10).join(all_elements[:15])}
-
-Look for ANY of these patterns:
-- Text: "Sign In", "Sign in", "Login", "Log In", "Account", "Your Account"
-- URLs: "/signin", "/login", "/ap/signin", "/gp/signin", "/auth", "/account"
-- Buttons that might trigger login (even if text doesn't say login)
-- Links to account/profile pages
-
-IMPORTANT: Even if text doesn't explicitly say "login", include URLs that could lead to authentication.
-
-Return ONLY JSON array: ["url1", "url2"]'''
-            }])
-            
-            ai_response = response['message']['content'].strip()
-            print(f"🤖 AI Full Analysis Response: {ai_response}")
-            
-            # Extract URLs from AI response
-            try:
-                # Clean up the response to handle mixed quotes
-                cleaned_response = ai_response.replace("'", '"')
-                start = cleaned_response.find('[')
-                end = cleaned_response.rfind(']') + 1
-                if start >= 0 and end > start:
-                    json_str = cleaned_response[start:end]
-                    print(f"🔧 Cleaned JSON: {json_str}")
-                    urls = json.loads(json_str)
-                    final_urls = [urljoin(base_url, url) for url in urls if isinstance(url, str)][:3]
-                    print(f"✅ AI Extracted URLs from full analysis: {final_urls}")
-                    return final_urls
-            except Exception as e:
-                print(f"❌ Failed to parse AI JSON: {e}")
-                # Fallback: extract URLs manually using regex
-                import re
-                url_pattern = r'["\']([^"\']*(?:login|signin|auth)[^"\']*)["\']'
-                matches = re.findall(url_pattern, ai_response, re.IGNORECASE)
-                if matches:
-                    fallback_urls = [urljoin(base_url, url) for url in matches[:3]]
-                    print(f"🔧 Fallback extracted URLs: {fallback_urls}")
-                    return fallback_urls
-            
-            return []
-            
-        except Exception as e:
-            print(f"❌ AI full analysis failed: {e}")
-            return []
     
     def _ai_analyze_found(self, html_content, soup):
         """AI analysis when auth components are found"""
