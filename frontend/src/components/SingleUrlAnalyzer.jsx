@@ -21,6 +21,9 @@ function SingleUrlAnalyzer({ onAnalysisComplete, onError, setIsLoading }) {
       return;
     }
 
+    // Clear previous results when starting new analysis
+    onAnalysisComplete([]);
+
     setIsAnalyzing(true);
     setIsLoading(true);
 

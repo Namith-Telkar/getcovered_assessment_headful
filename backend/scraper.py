@@ -4,8 +4,11 @@ import ollama
 import json
 import re
 from urllib.parse import urljoin, urlparse
-import asyncio
-from playwright.async_api import async_playwright
+import time
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 class AuthDetector:
     def __init__(self):
@@ -23,27 +26,19 @@ class AuthDetector:
             'Sec-Fetch-Site': 'none',
             'Cache-Control': 'max-age=0'
         })
-        self.use_playwright = False
     
-    def detect_auth_components(self, url, max_depth=2, use_playwright=True):
+    def detect_auth_components(self, url, max_depth=2, use_chromedriver=True):
         """
-        Recursively detect auth components with AI guidance
+        Detect auth components using undetected-chromedriver
         
         Args:
             url: URL to analyze
             max_depth: Maximum recursion depth for link following
-            use_playwright: If True (default), always use Playwright for maximum compatibility.
-                          If False, only use Playwright for detected JS-heavy pages.
+            use_chromedriver: If True (default), use undetected-chromedriver to open in browser
         """
-        if use_playwright:
-            print(f"🎭 Using Playwright by default for maximum compatibility...")
-            # Return the coroutine directly, let the caller await it
-            return self._detect_with_playwright(url)
-        
-        # Legacy mode: only use Playwright if detected as JS-heavy
-        if self._is_js_heavy_page(url):
-            print(f"🌐 Detected JS-heavy page dynamically, using Playwright...")
-            return self._detect_with_playwright(url)
+        if use_chromedriver:
+            print(f"🚗 Using undetected-chromedriver to open page in browser...")
+            return self._detect_with_chromedriver(url)
         
         return self._detect_recursive(url, depth=0, max_depth=max_depth, visited=set())
     
@@ -132,10 +127,147 @@ class AuthDetector:
                 "ai_analysis": f"Error: {str(e)}"
             }
     
-    def _scrape_page(self, url):
-        response = self.session.get(url, timeout=10)
-        response.raise_for_status()
-        return response.text
+    
+    def _detect_with_chromedriver(self, url):
+        """Use undetected-chromedriver to open page in browser and extract HTML"""
+        driver = None
+        try:
+            print(f"🚗 Starting undetected-chromedriver for {url}")
+            
+            # Create options for Chrome
+            options = uc.ChromeOptions()
+            # Set to headless=False to see the browser window
+            # options.add_argument('--headless=new')  # Comment this out to see the browser
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--start-maximized')
+            
+            # Initialize undetected chromedriver
+            driver = uc.Chrome(options=options, version_main=None)
+            
+            print(f"📄 Navigating to {url}...")
+            driver.get(url)
+            
+            # Wait for page to load
+            print(f"⏳ Waiting for page to load...")
+            time.sleep(5)  # Wait 5 seconds for dynamic content to load
+            
+            # Optional: Wait for specific elements
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+            except Exception as wait_err:
+                print(f"⚠️  Wait warning: {wait_err}")
+            
+            # Get the page source (rendered HTML)
+            html_content = driver.page_source
+            print(f"✅ Got rendered HTML ({len(html_content)} chars)")
+            
+            # Take screenshot for debugging (optional)
+            # driver.save_screenshot('debug_screenshot.png')
+            
+            # Check if we hit a CAPTCHA or bot protection
+            captcha_detected = False
+            html_lower = html_content.lower()
+            
+            blocking_captcha_indicators = [
+                'please verify you are a human',
+                'solve this puzzle',
+                'press and hold',
+                'datadome',
+                'perimeterx',
+                'cf-challenge',
+                'challenge-platform',
+                '<title>just a moment...</title>',
+                'ray id:',
+            ]
+            
+            for indicator in blocking_captcha_indicators:
+                if indicator in html_lower:
+                    captcha_detected = True
+                    print(f"🚫 Bot protection detected: '{indicator}' found in page")
+                    break
+            
+            if not captcha_detected and len(html_content) < 3000:
+                generic_captcha_keywords = ['recaptcha', 'hcaptcha', 'captcha-box', 'g-recaptcha']
+                for keyword in generic_captcha_keywords:
+                    if keyword in html_lower:
+                        captcha_detected = True
+                        print(f"🚫 Small page with CAPTCHA element: '{keyword}' found")
+                        break
+            
+            if captcha_detected and len(html_content) < 3000:
+                print(f"⚠️  Page blocked by anti-bot protection")
+                driver.quit()
+                return {
+                    "url": url,
+                    "found": False,
+                    "components": [],
+                    "captcha_detected": True,
+                    "ai_analysis": (
+                        "🚫 **Site Protected by Anti-Bot Service**\n\n"
+                        "This website uses CAPTCHA or anti-bot protection that prevents automated scraping. "
+                        "The login page cannot be accessed programmatically.\n\n"
+                        "**Alternatives:**\n"
+                        "- Use the site's official API if available\n"
+                        "- Manually export HTML from your browser\n"
+                        "- Test with similar sites that don't have bot protection"
+                    )
+                }
+            
+            # Now analyze the rendered HTML
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # Debug: Check if inputs are in HTML before parsing
+            raw_username_count = html_content.count('name="username"')
+            raw_password_count = html_content.count('name="password"')
+            print(f"🔍 Raw HTML check: username={raw_username_count}, password={raw_password_count}")
+            
+            components = self._traditional_detection(soup)
+            
+            # Close the browser
+            driver.quit()
+            
+            if components:
+                print(f"✅ Found {len(components)} auth components")
+                ai_analysis = self._ai_analyze_found(html_content, soup)
+                return {
+                    "url": url,
+                    "found": True,
+                    "components": components,
+                    "ai_analysis": f"[ChromeDriver Rendered] {ai_analysis}"
+                }
+            else:
+                print(f"❌ No auth components found")
+                
+                if captcha_detected:
+                    ai_analysis = (
+                        "Page rendered but may be partially blocked by anti-bot protection. "
+                        "No auth components detected. The site may require manual access or "
+                        "the login form may be behind additional security checks."
+                    )
+                else:
+                    ai_analysis = self._ai_analyze_not_found(soup, [])
+                
+                return {
+                    "url": url,
+                    "found": False,
+                    "components": [],
+                    "ai_analysis": f"[ChromeDriver Rendered] {ai_analysis}"
+                }
+                
+        except Exception as e:
+            print(f"❌ ChromeDriver error: {e}")
+            if driver:
+                driver.quit()
+            return {
+                "url": url,
+                "found": False,
+                "components": [],
+                "ai_analysis": f"ChromeDriver error: {str(e)}"
+            }
     
     def _is_js_heavy_page(self, url):
         """
@@ -145,13 +277,13 @@ class AuthDetector:
         try:
             print(f"🔍 Analyzing page to detect if JS-heavy...")
             
-            # Quick check for known problematic domains that always need Playwright
+            # Quick check for known problematic domains that always need ChromeDriver
             # (Fallback for sites that may have detection issues)
             domain = urlparse(url).netloc.lower()
             known_js_heavy = ['instagram.com', 'twitter.com', 'x.com', 'wordpress.com']
             if any(known in domain for known in known_js_heavy):
                 print(f"   ⚡ Known JS-heavy domain detected: {domain}")
-                print(f"✅ Page is JS-heavy (known domain), will use Playwright")
+                print(f"✅ Page is JS-heavy (known domain), will use ChromeDriver")
                 return True
             
             response = self.session.get(url, timeout=10)
@@ -240,7 +372,7 @@ class AuthDetector:
             is_js_heavy = score >= threshold
             
             if is_js_heavy:
-                print(f"✅ Page is JS-heavy, will use Playwright")
+                print(f"✅ Page is JS-heavy, will use ChromeDriver")
             else:
                 print(f"✅ Page is traditional HTML, will use fast scraping")
             
@@ -250,183 +382,11 @@ class AuthDetector:
             print(f"⚠️  Error detecting JS-heavy page, defaulting to traditional: {e}")
             return False
     
-    def _needs_playwright(self, url):
-        """
-        DEPRECATED: Legacy method using domain hardcoding.
-        Kept for backwards compatibility but not used.
-        """
-        js_heavy_domains = [
-            'instagram.com',
-            'twitter.com',
-            'x.com',
-            'facebook.com',
-            'linkedin.com',
-            'tiktok.com',
-            'netflix.com',
-            'airbnb.com',
-            'wordpress.com'
-        ]
-        domain = urlparse(url).netloc.lower()
-        return any(heavy_domain in domain for heavy_domain in js_heavy_domains)
     
-    async def _detect_with_playwright(self, url):
-        """Use Playwright to render JavaScript and detect auth components"""
-        try:
-            print(f"🎭 Starting Playwright for {url}")
-            playwright = await async_playwright().start()
-            
-            # Launch with more realistic settings to avoid bot detection
-            browser = await playwright.chromium.launch(
-                headless=True,
-                args=[
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-dev-shm-usage',
-                    '--no-sandbox'
-                ]
-            )
-            
-            context = await browser.new_context(
-                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                viewport={'width': 1920, 'height': 1080},
-                locale='en-US',
-                timezone_id='America/New_York'
-                # Removed extra_http_headers - they were triggering bot detection!
-                # Instagram detects DNT:1 and other headers as bot indicators
-            )
-            
-            page = await context.new_page()
-            
-            # Hide webdriver property
-            await page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            """)
-            
-            print(f"📄 Navigating to {url}...")
-            
-            # Use consistent strategy - networkidle works best
-            # Instagram's bot detection is TIME-BASED: if you wait too long, it removes the form!
-            try:
-                await page.goto(url, wait_until='networkidle', timeout=30000)
-                # Keep wait time SHORT - Instagram detects bots if page sits idle too long
-                await page.wait_for_timeout(5000)  # 5 seconds is the sweet spot
-            except Exception as nav_err:
-                print(f"⚠️  Navigation warning: {nav_err}")
-                # Continue anyway, page might have loaded
-            
-            # Get HTML content QUICKLY before Instagram's bot detection kicks in
-            html_content = await page.content()
-            print(f"✅ Got rendered HTML ({len(html_content)} chars)")
-            
-            # Take screenshot for debugging (optional)
-            # await page.screenshot(path='debug_screenshot.png')
-            
-            await context.close()
-            await browser.close()
-            await playwright.stop()
-            
-            # Check if we hit a CAPTCHA or bot protection
-            # Be careful: many sites reference "captcha" in their JS configs (like "arkose_captcha")
-            # without actually having a CAPTCHA. Only flag if it's an actual CAPTCHA page.
-            captcha_detected = False
-            html_lower = html_content.lower()
-            
-            # Specific CAPTCHA indicators (actual blocking challenges, not just references)
-            blocking_captcha_indicators = [
-                'please verify you are a human',
-                'solve this puzzle',
-                'press and hold',
-                'datadome',  # DataDome is always an actual blocker
-                'perimeterx',  # PerimeterX is always an actual blocker
-                'cf-challenge',  # Cloudflare challenge page
-                'challenge-platform',  # Generic challenge
-                '<title>just a moment...</title>',  # Cloudflare
-                'ray id:',  # Cloudflare blocked page
-            ]
-            
-            for indicator in blocking_captcha_indicators:
-                if indicator in html_lower:
-                    captcha_detected = True
-                    print(f"🚫 Bot protection detected: '{indicator}' found in page")
-                    break
-            
-            # If page is very small (< 3KB) and contains generic captcha keywords, it's likely blocked
-            if not captcha_detected and len(html_content) < 3000:
-                generic_captcha_keywords = ['recaptcha', 'hcaptcha', 'captcha-box', 'g-recaptcha']
-                for keyword in generic_captcha_keywords:
-                    if keyword in html_lower:
-                        captcha_detected = True
-                        print(f"🚫 Small page with CAPTCHA element: '{keyword}' found")
-                        break
-            
-            # If CAPTCHA detected and page is very small, it's likely blocked
-            if captcha_detected and len(html_content) < 3000:
-                print(f"⚠️  Page blocked by anti-bot protection")
-                return {
-                    "url": url,
-                    "found": False,
-                    "components": [],
-                    "captcha_detected": True,
-                    "ai_analysis": (
-                        "🚫 **Site Protected by Anti-Bot Service**\n\n"
-                        "This website uses CAPTCHA or anti-bot protection (DataDome, Cloudflare, etc.) "
-                        "that prevents automated scraping. The login page cannot be accessed programmatically.\n\n"
-                        "**Alternatives:**\n"
-                        "- Use the site's official API if available\n"
-                        "- Manually export HTML from your browser\n"
-                        "- Test with similar sites that don't have bot protection\n\n"
-                        "See CAPTCHA_PROTECTED_SITES.md for more details and workarounds."
-                    )
-                }
-            
-            # Now analyze the rendered HTML
-            soup = BeautifulSoup(html_content, 'html.parser')
-            
-            # Debug: Check if inputs are in HTML before parsing
-            raw_username_count = html_content.count('name="username"')
-            raw_password_count = html_content.count('name="password"')
-            print(f"🔍 Raw HTML check: username={raw_username_count}, password={raw_password_count}")
-            
-            components = self._traditional_detection(soup)
-            
-            if components:
-                print(f"✅ Found {len(components)} auth components with Playwright")
-                ai_analysis = self._ai_analyze_found(html_content, soup)
-                return {
-                    "url": url,
-                    "found": True,
-                    "components": components,
-                    "ai_analysis": f"[Playwright Rendered] {ai_analysis}"
-                }
-            else:
-                print(f"❌ No auth components found even with Playwright")
-                
-                # If CAPTCHA detected, mention it in the analysis
-                if captcha_detected:
-                    ai_analysis = (
-                        "Page rendered but may be partially blocked by anti-bot protection. "
-                        "No auth components detected. The site may require manual access or "
-                        "the login form may be behind additional security checks."
-                    )
-                else:
-                    ai_analysis = self._ai_analyze_not_found(soup, [])
-                
-                return {
-                    "url": url,
-                    "found": False,
-                    "components": [],
-                    "ai_analysis": f"[Playwright Rendered] {ai_analysis}"
-                }
-                
-        except Exception as e:
-            print(f"❌ Playwright error: {e}")
-            return {
-                "url": url,
-                "found": False,
-                "components": [],
-                "ai_analysis": f"Playwright error: {str(e)}"
-            }
+    def _scrape_page(self, url):
+        response = self.session.get(url, timeout=10)
+        response.raise_for_status()
+        return response.text
     
     def _traditional_detection(self, soup):
         components = []

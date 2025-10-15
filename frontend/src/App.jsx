@@ -43,7 +43,7 @@ function App() {
           )}
 
           {/* Results Section */}
-          {results.length > 0 && (
+          {results.length > 0 && !isLoading && (
             <div className="space-y-6 animate-fade-in">
               <div className="space-y-6">
                 {results.map((result, index) => (
@@ -54,7 +54,7 @@ function App() {
           )}
 
           {/* Loading State */}
-          {isLoading && results.length === 0 && !error && (
+          {isLoading && !error && (
             <div className="text-center py-16 animate-fade-in">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-2 border-[#5b7fd4]/20 border-t-[#5b7fd4] mb-4"></div>
               <p className="text-[#5a5a5a] text-base font-light">

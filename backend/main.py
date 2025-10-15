@@ -38,13 +38,8 @@ async def root():
 @app.post("/analyze")
 async def analyze_url(request: URLRequest):
     try:
-        # Use Playwright for all requests by default (maximum compatibility)
-        static_result = detector.detect_auth_components(request.url, use_playwright=True)
-        
-        # Check if result is a coroutine (Playwright mode)
-        import inspect
-        if inspect.iscoroutine(static_result):
-            static_result = await static_result
+        # Use undetected-chromedriver for all requests (visible browser)
+        static_result = detector.detect_auth_components(request.url, use_chromedriver=True)
         
         # Log HTML snippet length for debugging
         if static_result.get('components'):
@@ -73,7 +68,7 @@ async def analyze_url(request: URLRequest):
                 "found": static_result['found'],
                 "components": static_result['components'],
                 "ai_analysis": static_result['ai_analysis'],
-                "method": "static",
+                "method": "chromedriver",
                 "captcha_detected": static_result.get('captcha_detected', False),
                 "error": static_result.get('error')
             }
