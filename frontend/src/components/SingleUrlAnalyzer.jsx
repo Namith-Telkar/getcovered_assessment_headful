@@ -6,11 +6,14 @@ function SingleUrlAnalyzer({ onAnalysisComplete, onError, setIsLoading }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const examples = [
+    {
+      name: "GetCovered",
+      url: "https://www.getcoveredinsurance.com/auth/login",
+    },
     { name: "GitHub", url: "https://github.com/login" },
     { name: "Instagram", url: "https://instagram.com/accounts/login" },
     { name: "Stack Overflow", url: "https://stackoverflow.com/users/login" },
     { name: "Etsy", url: "https://www.etsy.com/signin" },
-    { name: "CNN", url: "https://www.cnn.com/account/log-in" },
   ];
 
   const handleSubmit = async (e) => {

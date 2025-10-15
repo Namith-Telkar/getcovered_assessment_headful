@@ -85,6 +85,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
+# Install Playwright browsers (required for agent.py dynamic detection)
+playwright install chromium
+
 # Verify installation
 python test_chromedriver.py
 ```
