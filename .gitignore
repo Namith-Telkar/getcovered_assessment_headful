@@ -45,8 +45,8 @@ coverage/
 
 # Debug files
 debug_*.py
-*.html
 instagram_html.html
+*_debug.html
 
 # Logs
 *.log

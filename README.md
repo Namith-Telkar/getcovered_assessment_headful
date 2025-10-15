@@ -113,7 +113,7 @@ npm install
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173`
+The frontend will be available at `http://localhost:3000`
 
 ### Step 4: Start the Backend Server
 
@@ -130,7 +130,7 @@ The API will be available at `http://localhost:8000`
 
 ## 🎮 How to Use
 
-1. **Open the frontend** in your browser: `http://localhost:5173`
+1. **Open the frontend** in your browser: `http://localhost:3000`
 
 2. **Enter a URL** you want to analyze (e.g., `https://github.com/login`)
 
@@ -269,7 +269,7 @@ python test_chromedriver.py
 ```bash
 curl -X POST http://localhost:8000/analyze \
   -H "Content-Type: application/json" \
-  -d '{"url": "https://github.com/login", "use_agents": false}'
+  -d '{"url": "https://github.com/login"}'
 ```
 
 ### Test Full Stack
