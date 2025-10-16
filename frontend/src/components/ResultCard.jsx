@@ -1,4 +1,5 @@
 import { html as beautifyHtml } from "js-beautify";
+import ReactMarkdown from "react-markdown";
 
 function ResultCard({ result }) {
   const statusClass = result.found ? "border-[#10b981]" : "border-[#e89090]";
@@ -235,6 +236,41 @@ function ResultCard({ result }) {
           <pre className="bg-[#2d2d2d] text-[#10b981] p-4 rounded-xl overflow-x-auto text-sm font-mono border border-[#e0e0e0] whitespace-pre max-h-96 overflow-y-auto">
             <code>{formatHtml(result.html_snippet)}</code>
           </pre>
+        </div>
+      )}
+
+      {/* AI Analysis */}
+      {result.ai_analysis && (
+        <div className="mb-6">
+          <p className="text-sm font-light text-[#5a5a5a] uppercase tracking-wider mb-3">
+            🤖 AI Analysis
+          </p>
+          <div className="bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] p-6 rounded-xl border border-[#e0e0e0]">
+            <div className="prose prose-sm max-w-none text-[#2d2d2d]">
+              <ReactMarkdown
+                components={{
+                  h1: ({node, ...props}) => <h1 className="text-xl font-semibold text-[#2d2d2d] mb-3 mt-4" {...props} />,
+                  h2: ({node, ...props}) => <h2 className="text-lg font-semibold text-[#2d2d2d] mb-2 mt-3" {...props} />,
+                  h3: ({node, ...props}) => <h3 className="text-base font-semibold text-[#2d2d2d] mb-2 mt-2" {...props} />,
+                  p: ({node, ...props}) => <p className="text-base font-light leading-relaxed mb-3 text-[#2d2d2d]" {...props} />,
+                  ul: ({node, ...props}) => <ul className="list-disc ml-6 mb-3 space-y-1" {...props} />,
+                  ol: ({node, ...props}) => <ol className="list-decimal ml-6 mb-3 space-y-1" {...props} />,
+                  li: ({node, ...props}) => <li className="text-base font-light text-[#2d2d2d]" {...props} />,
+                  strong: ({node, ...props}) => <strong className="font-semibold text-[#2d2d2d]" {...props} />,
+                  em: ({node, ...props}) => <em className="italic text-[#5a5a5a]" {...props} />,
+                  code: ({node, inline, ...props}) => 
+                    inline ? (
+                      <code className="bg-[#2d2d2d] text-[#10b981] px-2 py-0.5 rounded text-sm font-mono" {...props} />
+                    ) : (
+                      <code className="block bg-[#2d2d2d] text-[#10b981] p-3 rounded-lg text-sm font-mono overflow-x-auto" {...props} />
+                    ),
+                  blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-[#5b7fd4] pl-4 italic text-[#5a5a5a] my-3" {...props} />,
+                }}
+              >
+                {result.ai_analysis}
+              </ReactMarkdown>
+            </div>
+          </div>
         </div>
       )}
 
